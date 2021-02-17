@@ -1,0 +1,437 @@
+---
+title: "The Animal Model"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+
+# Single Trait Animal Model - Date : 2020-11-11
+
+# Reliability, Accuracy and Standard Error Prediction
+
+# Partitioning Breeding Values (PA, PC, YD)
+
+# Linear Models for the Prediction of Animal Breeding Values, Raphael Mrode, 3rd Edition
+
+#Julius Mugambe 
+
+
+
+# install.packages('MASS', dependencies = TRUE)
+library(MASS)
+
+# make design matrix 
+desgn <- function(v) {
+  if (is.numeric(v)) {
+    va = v
+    mrow = length(va)
+    mcol = max(va)
+  }
+  if (is.character(v)) {
+    vf = factor(v)
+    # Save the index value of each level
+    va = as.numeric(vf)
+    mrow = length(va)
+    mcol = length(levels(vf))
+  }
+  
+  # Initializing X-matrix
+  X = matrix(data = c(0), nrow = mrow, ncol = mcol)
+  
+  for (i in 1:mrow) {
+    ic = va[i]
+    X[i, ic] = 1
+  }
+  return(X)
+}
+
+# function to make inverse of numerator relationship matrix
+ainv = function(ped) {
+  n = nrow(ped)
+  Ainv = matrix(c(0), nrow = n, ncol = n)
+  
+  for (i in 1:n) {
+    animal = ped[i, 1]
+    sire = ped[i, 2]
+    dam = ped[i, 3]
+    
+    if (sire == 0 & dam == 0) {
+      # both parents unknown
+      alpha = 1
+      Ainv[animal, animal] = alpha + Ainv[animal, animal]
+    } else if (sire != 0 & dam == 0) {
+      # sire known
+      alpha = 4/3
+      Ainv[animal, animal] = alpha + Ainv[animal, animal]
+      Ainv[animal, sire] = -alpha/2 + Ainv[animal, sire]
+      Ainv[sire, animal] = -alpha/2 + Ainv[sire, animal]
+      Ainv[sire, sire] = alpha/4 + Ainv[sire, sire]
+    } else if (sire == 0 & dam != 0) {
+      # dam known
+      alpha = 4/3
+      Ainv[animal, animal] = alpha + Ainv[animal, animal]
+      Ainv[animal, dam] = -alpha/2 + Ainv[animal, dam]
+      Ainv[dam, animal] = -alpha/2 + Ainv[dam, animal]
+      Ainv[dam, dam] = alpha/4 + Ainv[dam, dam]
+    } else {
+      # both parents known
+      alpha = 2
+      Ainv[animal, animal] = alpha + Ainv[animal, animal]
+      Ainv[animal, sire] = -alpha/2 + Ainv[animal, sire]
+      Ainv[sire, animal] = -alpha/2 + Ainv[sire, animal]
+      Ainv[animal, dam] = -alpha/2 + Ainv[animal, dam]
+      Ainv[dam, animal] = -alpha/2 + Ainv[dam, animal]
+      Ainv[sire, sire] = alpha/4 + Ainv[sire, sire]
+      Ainv[sire, dam] = alpha/4 + Ainv[sire, dam]
+      Ainv[dam, sire] = alpha/4 + Ainv[dam, sire]
+      Ainv[dam, dam] = alpha/4 + Ainv[dam, dam]
+    }
+  }
+  return(Ainv)
+}
+
+# set working directory 
+setwd("/home/hossein/Julius/R-MME") 
+
+# print working directory 
+getwd()
+
+
+# pedigree and data
+
+# read pedigree : id sire dam
+ped = read.table("pedigree.txt", header = TRUE, sep = " ", stringsAsFactors = FALSE)
+
+# print
+ped
+
+# read data : animal, sex, pre-weaning gain (WWG)
+data = read.table("data.txt", header = TRUE, sep = " ", stringsAsFactors = FALSE)
+
+# print
+data
+
+# variance component and ratio
+sigma_a = 20
+sigma_e = 40
+alpha = sigma_e/sigma_a
+
+# print
+sigma_a
+sigma_e
+alpha
+
+# design matrix
+
+# design matrix of fixed effect
+X = desgn(data[, 2])
+
+# print
+X
+
+# number of levels of fixed effect
+no_levels_fixed = ncol(X)
+
+# print
+no_levels_fixed
+
+# design matrix of animal effect
+Z = desgn(data[, 1])
+
+# print
+Z
+
+# number of animals
+no_animals = ncol(Z)
+
+# print
+no_animals
+
+
+# observation
+y = data[, 3]
+
+# print
+y
+
+# inverse matrix of NRM (A)
+A = ainv(ped)
+
+# print
+A
+
+# LHS, RHS
+
+# LHS construction
+LHS = rbind(
+  cbind(t(X) %*% X, t(X) %*% Z), 
+  cbind(t(Z) %*% X, t(Z) %*% Z + A * alpha))
+
+# print
+LHS
+
+# RHS construction
+RHS = rbind(t(X) %*% y, t(Z) %*% y)
+
+# print
+RHS
+# Solutions
+# generalized inverse of LHS
+gi_LHS = ginv(LHS)
+
+# print
+gi_LHS
+
+# solution
+sol = gi_LHS %*% RHS
+
+# print
+sol
+
+# solutions for fixed effects and animal effects
+sol_fixed = sol[1 : no_levels_fixed]
+sol_animal = sol[(no_levels_fixed + 1) : (no_levels_fixed + no_animals)]
+
+#
+sol_fixed
+sol_animal
+
+# reliability(r2), accuracy(r), standard error of prediction(SEP)
+
+# diagonal elements of the generalized inverse of LHS for animal equation
+D = diag(gi_LHS[(no_levels_fixed + 1) : (no_levels_fixed + no_animals), (no_levels_fixed + 1) : (no_levels_fixed + no_animals)])
+
+# print
+D
+
+# reliability
+rel = 1 - D * alpha
+
+# print
+rel
+
+# accuracy
+acc = sqrt(rel)
+
+# print
+acc
+
+# standard error of prediction(SEP)
+sep = sqrt( D * sigma_e)
+
+#
+sep
+
+# partitioning of breeding values
+# a_i = n1(Parental Average) + n2(Yield Deviation) + n3(Progeny Contribution)
+
+# yield deviation
+# YD is the vector of yield deviations (YDs) and represents the yields of the 
+# animal adjusted for all effects other than genetic merit and error.
+YD1 = ginv(t(Z) %*% Z) %*% t(Z) %*% (y - X %*% sol_fixed)
+
+# print
+YD1
+
+# numerator of n2
+a2 = diag(t(Z) %*% Z)
+
+# print
+a2
+
+
+# Parents average, progeny contribution
+
+# parents avearge
+PA1 = rep(0, no_animals)
+
+# progeny contribution numerator
+PC0 = rep(0, no_animals)
+
+# numerator of n3, denominator of progeny contribution
+a3 = rep(0, no_animals)
+
+# numerator of n1
+a1 = rep(0, no_animals)
+
+# looping ped
+for (i in 1 : no_animals) {
+  
+  sire = ped[i, 2]
+  dam = ped[i, 3]
+  
+  if (sire == 0 & dam == 0) {
+    # both parents unknown
+    # PA
+    a1[i] = 1 * alpha
+    
+  } else if (sire != 0 & dam == 0) {
+    # 
+    
+    # PA 
+    a1[i] = 4/3 * alpha
+    PA1[i] = sol_animal[sire]/2
+    
+    # PC for sire
+    a3[sire] = a3[sire] + 0.5 * alpha * (2/3)
+    PC0[sire] = PC0[sire] + 0.5 * alpha * (2/3) * (2 * sol_animal[i])
+    
+  } else if (sire == 0 & dam != 0) {
+    # dam known
+    
+    # PA 
+    a1[i] = 4/3 * alpha
+    PA1[i] = sol_animal[dam]/2
+    
+    # PC for dam
+    a3[dam] = a3[dam] + 0.5 * alpha * (2/3)
+    PC0[dam] = PC0[dam] + 0.5 * alpha * (2/3) * (2 * sol_animal[i])
+    
+  } else {
+    # both parents known
+    
+    # PA 
+    a1[i] = 2 * alpha
+    PA1[i] = (sol_animal[sire] + sol_animal[dam])/2
+    
+    # PC for sire
+    a3[sire] = a3[sire] + 0.5 * alpha
+    PC0[sire] = PC0[sire] + 0.5 * alpha * (2 * sol_animal[i] - sol_animal[dam])
+    
+    # PC for dam
+    a3[dam] = a3[dam] + 0.5 * alpha
+    PC0[dam] = PC0[dam] + 0.5 * alpha * (2 * sol_animal[i] - sol_animal[sire])
+    
+  }
+}
+
+# print
+a1
+PA1
+a3
+PC0
+
+# denominator of n1, n2, n3, diagonal of animals in LHS
+nd = a1 + a2 + a3
+
+# print
+nd
+
+# parents average fraction of breeding values
+PA = PA1 * (a1 / nd)
+
+# print
+PA
+
+# yield deviation fraction of breeding values
+YD = YD1 * (a2 / nd)
+
+# print
+YD
+
+# progeny contribution
+PC1 = PC0 / a3
+PC1[is.nan(PC1) == TRUE] = 0
+PC1
+
+# progeny contribution fraction of breeding values
+PC =  PC1 * (a3 / nd)
+
+# print
+PC
+
+# Progeny(Daughter) Yield Deviation(PYD, DYD)
+
+# n2 of progeny
+n2prog = a2 / (a1 + a2)
+
+# print
+n2prog
+
+# numerator of DYD : summation of u of progeny * n2 of progeny * (2 * YD - bv of mate)
+DYD_n = rep(0, no_animals)
+# denominator of DYD : summation of u of progeny * n2 of progeny
+DYD_d = rep(0, no_animals)
+
+# looping ped
+for (i in 1 : no_animals) {
+  
+  sire = ped[i, 2]
+  dam = ped[i, 3]
+  
+  if (sire == 0 & dam == 0) {
+    # both parents unknown
+    
+  } else if (sire != 0 & dam == 0) {
+    # 
+    
+    # DYD_n
+    DYD_n[sire] = DYD_n[sire] + n2prog[i] * 2 / 3 * 2 * YD1[i]
+    # DYD_d 
+    DYD_d[sire] = DYD_d[sire] + n2prog[i] * 2 / 3
+    
+  } else if (sire == 0 & dam != 0) {
+    # dam known
+    
+    # DYD_n
+    DYD_n[dam] = DYD_n[dam] + n2prog[i] * 2 / 3 * 2 * YD1[i]
+    # DYD_d
+    DYD_d[dam] = DYD_d[dam] + n2prog[i] * 2 / 3
+    
+  } else {
+    # both parents known
+    
+    # DYD_n
+    DYD_n[sire] = DYD_n[sire] + n2prog[i] * (2 * YD1[i] - sol_animal[dam])
+    DYD_n[dam] = DYD_n[dam] + n2prog[i] * (2 * YD1[i] - sol_animal[sire])
+    
+    # DYD_d
+    DYD_d[sire] = DYD_d[sire] + n2prog[i]
+    DYD_d[dam] = DYD_d[dam] + n2prog[i]
+    
+  }
+}
+
+# print
+DYD_n
+DYD_d
+
+# DYD
+DYD = DYD_n / DYD_d
+DYD[is.nan(DYD) == TRUE] = 0
+
+# print
+DYD
+
+# breeding values and fractions
+result = data.frame(animal = ped[,1], animal_bv = sol_animal, rel = rel, acc = acc, sep = sep, PA = PA, YD = YD, PC = PC, sum_of_fr = PA + YD + PC, DYD = DYD)
+
+# print
+result
+
+# Output to file, separator ",", no quotation marks
+output_filename = gsub("[ -]", "", paste("result_", Sys.Date(), ".csv")) 
+write.table(result, output_filename, sep=" ", row.names = FALSE, quote = FALSE)
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
